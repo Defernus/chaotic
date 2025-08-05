@@ -1,0 +1,36 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Denis Lavrentev"]
+license = "MIT AND Apache-2.0"
+edition = "2021"
+repository = "https://github.com/defernus/double-pendulum"
+keywords = ["double-pendulum", "simulation", "art"]
+
+[workspace.dependencies]
+rand = "0.9"
+nannou = "0.19"
+
+
+# project packages
+double-pendulum = { version = "0.1.0", path = "./crates/double-pendulum" }
+
+[profile.release]
+codegen-units = 1
+debug = false
+debug-assertions = false
+incremental = false
+lto = true
+overflow-checks = true
+opt-level = 3
+panic = "abort"
+rpath = false
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
