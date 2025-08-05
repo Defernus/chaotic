@@ -1,10 +1,8 @@
 use core::f64;
 use double_pendulum::*;
+use nannou::color::rgb::Rgb;
+use nannou::image;
 use nannou::prelude::*;
-
-fn main() {
-    nannou::app(model).update(update).simple_window(view).run();
-}
 
 const INITIAL_ANGLE1: f64 = f64::consts::PI / 3.0;
 const INITIAL_ANGLE2: f64 = f64::consts::PI / 2.0;
@@ -12,90 +10,113 @@ const L1: f64 = 1.0;
 const L2: f64 = 1.0;
 const M1: f64 = 1.0;
 const M2: f64 = 1.0;
-const ANGLE_MUTATION: f64 = 0.01;
+const ANGLE_MUTATION: f64 = 0.000001;
 const GRAVITY: f64 = 0.001;
-const MOUSE_SENSITIVITY: f64 = 0.01;
 const UPDATES_PER_ITERATION: usize = 1;
-const SAMPLE_SIZE: usize = 256;
-const ITERATIONS: usize = 256;
+const WIDTH: usize = 700;
+const HEIGHT: usize = 700;
+
+fn main() {
+    nannou::app(model)
+        .size(WIDTH as u32, HEIGHT as u32)
+        .update(update)
+        .simple_window(view)
+        .run();
+}
 
 struct Model {
-    pub states: Vec<Vec<DoublePendulum>>,
-    pub prev_mouse: Option<Point2>,
+    pub sample: Vec<DoublePendulum>,
+    pub image: image::DynamicImage,
+    pub update_row: usize,
 }
 
 fn model(_app: &App) -> Model {
-    let mut states = Vec::with_capacity(ITERATIONS);
+    let mut image = image::DynamicImage::new_rgb8(WIDTH as u32, HEIGHT as u32);
 
-    let mut sample = Vec::with_capacity(SAMPLE_SIZE);
-
-    for i in 0..SAMPLE_SIZE {
+    let mut sample = Vec::with_capacity(WIDTH);
+    for i in 0..WIDTH {
         sample.push(
             DoublePendulum::new(L1, L2, M1, M2)
                 .with_angle1(INITIAL_ANGLE1 + ANGLE_MUTATION * i as f64)
                 .with_angle2(INITIAL_ANGLE2 - ANGLE_MUTATION * i as f64),
-        )
+        );
+        let image::DynamicImage::ImageRgb8(image) = &mut image else {
+            panic!("Expected image to be of type ImageRgb8");
+        };
+        image.put_pixel(i as u32, 0, pendulum_to_color(&sample[i]));
     }
-    states.push(sample.clone());
 
-    Model {
-        states,
-        prev_mouse: None,
-    }
-}
-
-fn update(app: &App, model: &mut Model, _update: Update) {
-    let mouse = app.mouse.position();
-    let delta = model.prev_mouse.map(|prev| mouse - prev);
-
-    let mut sample = model.states.last().cloned().unwrap();
-
-    for pendulum in sample.iter_mut() {
-        for _ in 0..UPDATES_PER_ITERATION {
-            pendulum.update(GRAVITY);
-            if let Some(delta) = delta {
-                pendulum.angle1 += delta.x as f64 * MOUSE_SENSITIVITY;
-                pendulum.angle2 += delta.y as f64 * MOUSE_SENSITIVITY;
+    for j in 1..HEIGHT {
+        for i in 0..WIDTH {
+            for _ in 0..UPDATES_PER_ITERATION {
+                sample[i].update(GRAVITY);
             }
+            let image::DynamicImage::ImageRgb8(image) = &mut image else {
+                panic!("Expected image to be of type ImageRgb8");
+            };
+            image.put_pixel(i as u32, j as u32, pendulum_to_color(&sample[i]));
         }
     }
 
-    model.states.push(sample.clone());
-    if model.states.len() > ITERATIONS {
-        model.states.remove(0);
+    Model {
+        sample,
+        image,
+        update_row: 0,
+    }
+}
+
+fn update(_app: &App, model: &mut Model, _update: Update) {
+    for (i, pendulum) in model.sample.iter_mut().enumerate() {
+        for _ in 0..UPDATES_PER_ITERATION {
+            pendulum.update(GRAVITY);
+        }
+
+        let image::DynamicImage::ImageRgb8(image) = &mut model.image else {
+            panic!("Expected image to be of type ImageRgb8");
+        };
+        image.put_pixel(
+            i as u32,
+            model.update_row as u32,
+            pendulum_to_color(pendulum),
+        );
     }
 
-    model.prev_mouse = Some(mouse);
+    model.update_row += 1;
+    if model.update_row >= HEIGHT {
+        model.update_row = 0;
+    }
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
-
     let win = app.window_rect();
 
-    for (i, sample) in model.states.iter().enumerate() {
-        for (j, double_pendulum) in sample.iter().enumerate() {
-            let width = (1.0 / sample.len() as f32) * win.w();
-            let height = (1.0 / model.states.len() as f32) * win.h();
+    let texture = wgpu::Texture::from_image(app, &model.image);
 
-            let x = j as f32 * width - win.w() / 2.0 + width / 2.0;
-            let y = i as f32 * height - win.h() / 2.0 + height;
-
-            draw_double_pendulum(&draw, double_pendulum, pt2(x, y), pt2(width, height));
-        }
-    }
+    // Draw texture 2 times with offsets to simulate infinite scrolling
+    draw.texture(&texture)
+        .wh(win.wh())
+        .y(model.update_row as f32 - HEIGHT as f32 / 2.0 - win.h() * 0.5);
+    draw.texture(&texture)
+        .wh(win.wh())
+        .y(model.update_row as f32 - HEIGHT as f32 / 2.0 + HEIGHT as f32 - win.h() * 0.5);
 
     draw.to_frame(app, &frame).unwrap();
 }
 
-fn draw_double_pendulum(draw: &Draw, double_pendulum: &DoublePendulum, pos: Vec2, size: Vec2) {
-    let color = Hsv::new(
+fn pendulum_to_color(double_pendulum: &DoublePendulum) -> image::Rgb<u8> {
+    let rgb: Rgb = Hsv::new(
         (normalize_angle(double_pendulum.angle1) * 360.0) as f32,
         ((double_pendulum.angle2.sin() + 1.0) * 0.5) as f32,
         1.0,
-    );
-    // Draw the second mass
-    draw.rect().xy(pos).wh(size).color(color);
+    )
+    .into();
+
+    image::Rgb([
+        (rgb.red * 255.0) as u8,
+        (rgb.green * 255.0) as u8,
+        (rgb.blue * 255.0) as u8,
+    ])
 }
 
 /// Convert angle to a normalized value between 0 and 1
