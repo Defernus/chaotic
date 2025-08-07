@@ -67,12 +67,7 @@ impl ThreeBody {
 
 impl ChaoticSystem for ThreeBody {
     fn mutate(&mut self, mutation: f64) {
-        self.a.velocity.x += mutation * (rand::random::<f64>() - 0.5);
-        self.a.velocity.y += mutation * (rand::random::<f64>() - 0.5);
-        self.b.velocity.x += mutation * (rand::random::<f64>() - 0.5);
-        self.b.velocity.y += mutation * (rand::random::<f64>() - 0.5);
-        self.c.velocity.x += mutation * (rand::random::<f64>() - 0.5);
-        self.c.velocity.y += mutation * (rand::random::<f64>() - 0.5);
+        self.a.velocity.x += mutation;
     }
 
     fn update(&mut self, dt: f64) {

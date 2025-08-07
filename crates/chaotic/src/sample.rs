@@ -6,6 +6,10 @@ pub struct Samples<T> {
 }
 
 impl<System> Samples<System> {
+    pub fn len(&self) -> usize {
+        self.samples.len()
+    }
+
     pub fn new(initial: System, size: usize, mutation: f64) -> Self
     where
         System: ChaoticSystem + Clone,

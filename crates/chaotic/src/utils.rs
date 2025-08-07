@@ -24,5 +24,5 @@ pub fn map_index_to_f32(value: usize, len: usize, size: f32) -> f32 {
 }
 
 pub fn map_f32_to_index(value: f32, len: usize, size: f32) -> usize {
-    (value * len as f32 / size) as usize
+    ((value.max(0.0) * len as f32 / size) as usize).min(len - 1)
 }

@@ -7,7 +7,7 @@ const G: f64 = 1.1; // Gravitational constant
 const DT: f64 = 0.31; // Time step for simulation
 
 const UPDATES_PER_ITERATION: usize = 1;
-const MUTATION: f64 = 0.0001;
+const MUTATION: f64 = 0.000001;
 const SAMPLE_SIZE: usize = 1024;
 const HEIGHT: usize = 512;
 
@@ -21,6 +21,7 @@ fn main() {
 }
 
 struct Model<System> {
+    pub initial_sample: System,
     pub samples: Samples<System>,
     pub display_sample: usize,
     pub image: image::DynamicImage,
@@ -30,10 +31,22 @@ struct Model<System> {
 
 impl<System: ChaoticSystem + Clone> Model<System> {
     fn reset(&mut self) {
+        let h_size = self.samples.len() / 2;
+        let (direction, iterations) = if self.display_sample > h_size {
+            (1.0, self.display_sample - h_size)
+        } else {
+            (-1.0, h_size - self.display_sample)
+        };
+
+        for _ in 0..iterations {
+            self.initial_sample.mutate(MUTATION * direction);
+        }
+
         let (samples, initial_system_index) =
-            create_samples(self.samples.samples[0].clone(), &mut self.image);
+            create_samples(self.initial_sample.clone(), &mut self.image);
         self.samples = samples;
         self.display_sample = initial_system_index;
+        self.update_row = 0;
     }
 }
 
@@ -44,7 +57,7 @@ fn model(_app: &App) -> Model<ThreeBody> {
     let mass = 0.1;
     let velocity = 0.31;
 
-    let initial_system = ThreeBody::new(
+    let initial_sample = ThreeBody::new(
         G,
         Body::new(
             mass,
@@ -64,11 +77,12 @@ fn model(_app: &App) -> Model<ThreeBody> {
     );
     let mut image = image::DynamicImage::new_rgb8(SAMPLE_SIZE as u32, HEIGHT as u32);
 
-    let (samples, initial_system_index) = create_samples(initial_system, &mut image);
+    let (samples, initial_system_index) = create_samples(initial_sample.clone(), &mut image);
 
     println!("sample {:?}", samples.samples.last());
 
     Model {
+        initial_sample,
         samples,
         display_sample: initial_system_index,
         image,
@@ -154,12 +168,11 @@ fn event<System: ChaoticSystem + Clone>(app: &App, model: &mut Model<System>, ev
                     model.display_sample
                 );
             }
-            WindowEvent::MousePressed(MouseButton::Left) => {
+            WindowEvent::MouseMoved(pos) if app.mouse.buttons.left().is_down() => {
                 let win = app.window_rect();
                 let width = win.w();
 
-                model.display_sample =
-                    map_f32_to_index(app.mouse.x + width * 0.5, SAMPLE_SIZE, width);
+                model.display_sample = map_f32_to_index(pos.x + width * 0.5, SAMPLE_SIZE, width);
 
                 println!("Inspecting simulation at {}", model.display_sample);
             }
