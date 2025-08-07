@@ -13,4 +13,7 @@ pub trait ChaoticSystem {
 
     /// Returns the RGB color representation of the system.
     fn color(&self) -> image::Rgba<u8>;
+
+    /// Returns a difference value between two systems.
+    fn distance(&self, other: &Self) -> f64;
 }

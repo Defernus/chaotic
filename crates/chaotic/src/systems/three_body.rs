@@ -120,6 +120,15 @@ impl ChaoticSystem for ThreeBody {
             255, // Alpha channel
         ])
     }
+
+    fn distance(&self, other: &Self) -> f64 {
+        let mut total_distance = 0.0;
+        for (body_a, body_b) in self.iter().zip(other.iter()) {
+            let distance = body_a.velocity.distance(body_b.velocity);
+            total_distance += distance;
+        }
+        total_distance / 3.0 // Average distance
+    }
 }
 
 fn val_to_channel(vel: DVec2) -> f64 {
