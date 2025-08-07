@@ -16,4 +16,7 @@ pub trait ChaoticSystem {
 
     /// Returns a difference value between two systems.
     fn distance(&self, other: &Self) -> f64;
+
+    /// Returns some abstract chaosity measure of the system. Less value means more stable system.
+    fn chaosity(&self) -> f64;
 }

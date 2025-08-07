@@ -4,7 +4,7 @@ use nannou::image;
 use nannou::prelude::*;
 
 const G: f64 = 1.1; // Gravitational constant
-const DT: f64 = 0.1; // Time step for simulation
+const DT: f64 = 0.31; // Time step for simulation
 
 const UPDATES_PER_ITERATION: usize = 1;
 const MUTATION: f64 = 0.0001;
@@ -66,12 +66,14 @@ fn model(_app: &App) -> Model<ThreeBody> {
 
     let (samples, initial_system_index) = create_samples(initial_system, &mut image);
 
+    println!("sample {:?}", samples.samples.last());
+
     Model {
         samples,
         display_sample: initial_system_index,
         image,
         update_row: 0,
-        is_paused: false,
+        is_paused: true,
     }
 }
 
@@ -85,8 +87,6 @@ fn create_samples<System: ChaoticSystem + Clone>(
         samples.update(UPDATES_PER_ITERATION, DT);
         samples.draw_line(image, j);
     }
-
-    println!("Finished generating samples");
 
     (samples, 0)
 }
@@ -125,23 +125,43 @@ fn event<System: ChaoticSystem + Clone>(app: &App, model: &mut Model<System>, ev
                 } else {
                     model.display_sample -= 1;
                 }
+
+                println!("Inspecting simulation at {}", model.display_sample);
             }
             WindowEvent::KeyPressed(Key::Right) => {
                 model.display_sample += 1;
                 if model.display_sample >= SAMPLE_SIZE {
                     model.display_sample = 0;
                 }
+
+                println!("Inspecting simulation at {}", model.display_sample);
+            }
+            WindowEvent::KeyPressed(Key::F) => {
+                let most_stable_system_index = model
+                    .samples
+                    .samples
+                    .iter()
+                    .map(ChaoticSystem::chaosity)
+                    .enumerate()
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(index, _)| index)
+                    .unwrap_or(model.display_sample);
+
+                model.display_sample = most_stable_system_index;
+
+                println!(
+                    "Inspecting most stable simulation at {}",
+                    model.display_sample
+                );
             }
             WindowEvent::MousePressed(MouseButton::Left) => {
                 let win = app.window_rect();
                 let width = win.w();
 
-                let display_sample =
+                model.display_sample =
                     map_f32_to_index(app.mouse.x + width * 0.5, SAMPLE_SIZE, width);
 
-                println!("Inspecting simulation at {}", display_sample);
-
-                model.display_sample = display_sample;
+                println!("Inspecting simulation at {}", model.display_sample);
             }
             _ => {}
         },

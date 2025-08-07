@@ -4,12 +4,19 @@ use nannou::image;
 
 const EPSILON: f64 = 1e-5;
 
+#[derive(Debug, Clone, Copy)]
+pub enum ThreeBodyColorSchema {
+    VelocityToRgb,
+    DistanceToLightness { factor: f64 },
+}
+
 #[derive(Debug, Clone)]
 pub struct ThreeBody {
     pub g: f64,
     pub a: Body,
     pub b: Body,
     pub c: Body,
+    pub color_schema: ThreeBodyColorSchema,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +38,18 @@ impl Body {
 
 impl ThreeBody {
     pub fn new(g: f64, a: Body, b: Body, c: Body) -> Self {
-        ThreeBody { g, a, b, c }
+        ThreeBody {
+            g,
+            a,
+            b,
+            c,
+            color_schema: ThreeBodyColorSchema::VelocityToRgb,
+        }
+    }
+
+    pub fn with_color_schema(mut self, color_schema: ThreeBodyColorSchema) -> Self {
+        self.color_schema = color_schema;
+        self
     }
 
     pub fn raw_rgb(&self) -> DVec3 {
@@ -104,6 +122,7 @@ impl ChaoticSystem for ThreeBody {
         };
 
         ThreeBody {
+            color_schema: self.color_schema,
             g: lerp_f64(self.g, other.g, t),
             a,
             b,
@@ -112,13 +131,28 @@ impl ChaoticSystem for ThreeBody {
     }
 
     fn color(&self) -> image::Rgba<u8> {
-        let rgb = self.raw_rgb();
-        image::Rgba([
-            (rgb.x * 255.0) as u8,
-            (rgb.y * 255.0) as u8,
-            (rgb.z * 255.0) as u8,
-            255, // Alpha channel
-        ])
+        match self.color_schema {
+            ThreeBodyColorSchema::VelocityToRgb => {
+                let rgb = self.raw_rgb();
+                image::Rgba([
+                    (rgb.x * 255.0) as u8,
+                    (rgb.y * 255.0) as u8,
+                    (rgb.z * 255.0) as u8,
+                    255, // Alpha channel
+                ])
+            }
+
+            ThreeBodyColorSchema::DistanceToLightness { factor } => {
+                let value = self.chaosity() * factor + 1.0;
+                let normalized_value = 1.0 / value.sqrt();
+                image::Rgba([
+                    (normalized_value * 255.0) as u8,
+                    (normalized_value * 255.0) as u8,
+                    (normalized_value * 255.0) as u8,
+                    255,
+                ])
+            }
+        }
     }
 
     fn distance(&self, other: &Self) -> f64 {
@@ -129,17 +163,17 @@ impl ChaoticSystem for ThreeBody {
         }
         total_distance / 3.0 // Average distance
     }
+
+    fn chaosity(&self) -> f64 {
+        self.iter()
+            .map(|body| body.position.length_squared())
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap_or(0.0)
+    }
 }
 
 fn val_to_channel(vel: DVec2) -> f64 {
     let vel = vel.normalize_or_zero();
 
-    // let angle = if vel == DVec2::ZERO {
-    //     0.0
-    // } else {
-    //     DVec2::X.angle_between(vel)
-    // };
-
-    // normalize_angle(angle)
     (vel.x + vel.y + 2.0) / 4.0
 }
