@@ -1,4 +1,4 @@
-# Double Pendulum
+# Chaotic system explorer
 
 // TODO
 
