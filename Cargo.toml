@@ -7,8 +7,8 @@ version = "0.1.0"
 authors = ["Denis Lavrentev"]
 license = "MIT AND Apache-2.0"
 edition = "2021"
-repository = "https://github.com/defernus/double-pendulum"
-keywords = ["double-pendulum", "simulation", "art"]
+repository = "https://github.com/defernus/chaotic"
+keywords = ["simulation", "art", "chaotic-system", "three-body", "nannou"]
 
 [workspace.dependencies]
 rand = "0.9"
