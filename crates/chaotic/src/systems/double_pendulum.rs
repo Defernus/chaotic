@@ -1,3 +1,6 @@
+use crate::*;
+use nannou::{color, image};
+
 #[derive(Debug, Clone)]
 pub struct DoublePendulum {
     pub length1: f64,
@@ -75,5 +78,20 @@ impl DoublePendulum {
         self.angle2 += self.angular_velocity2;
         self.angular_velocity1 *= 1.0 - self.dampening;
         self.angular_velocity2 *= 1.0 - self.dampening;
+    }
+
+    pub fn color(&self) -> image::Rgb<u8> {
+        let rgb: color::Rgb = color::Hsv::new(
+            (normalize_angle(self.angle1) * 360.0) as f32,
+            ((self.angle2.sin() + 1.0) * 0.5) as f32,
+            1.0,
+        )
+        .into();
+
+        image::Rgb([
+            (rgb.red * 255.0) as u8,
+            (rgb.green * 255.0) as u8,
+            (rgb.blue * 255.0) as u8,
+        ])
     }
 }

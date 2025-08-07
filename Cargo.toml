@@ -16,7 +16,7 @@ nannou = "0.19"
 
 
 # project packages
-double-pendulum = { version = "0.1.0", path = "./crates/double-pendulum" }
+chaotic = { version = "0.1.0", path = "./crates/chaotic" }
 
 [profile.release]
 codegen-units = 1
