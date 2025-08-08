@@ -1,8 +1,8 @@
-use nannou::image;
+use bevy::color::Color;
 
 pub trait ChaoticSystem {
     /// Mutates the system by a `mutation` factor.
-    fn mutate(&mut self, mutation: f64);
+    fn mutate(&mut self, pos: &[usize], mutation_scales: &[f64]);
 
     /// Updates the system state by a time step `dt`.
     fn update(&mut self, dt: f64);
@@ -12,7 +12,7 @@ pub trait ChaoticSystem {
     fn lerp(&self, other: &Self, t: f64) -> Self;
 
     /// Returns the RGB color representation of the system.
-    fn color(&self) -> image::Rgba<u8>;
+    fn color(&self) -> Color;
 
     /// Returns a difference value between two systems.
     fn distance(&self, other: &Self) -> f64;

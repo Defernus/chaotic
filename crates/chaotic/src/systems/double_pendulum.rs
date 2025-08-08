@@ -1,5 +1,5 @@
 use crate::*;
-use nannou::{color, image};
+use bevy::color::{Color, Hsva};
 
 #[derive(Debug, Clone)]
 pub struct DoublePendulum {
@@ -80,18 +80,13 @@ impl DoublePendulum {
         self.angular_velocity2 *= 1.0 - self.dampening;
     }
 
-    pub fn color(&self) -> image::Rgb<u8> {
-        let rgb: color::Rgb = color::Hsv::new(
+    pub fn color(&self) -> Color {
+        Hsva::new(
             (normalize_angle(self.angle1) * 360.0) as f32,
             ((self.angle2.sin() + 1.0) * 0.5) as f32,
             1.0,
+            1.0,
         )
-        .into();
-
-        image::Rgb([
-            (rgb.red * 255.0) as u8,
-            (rgb.green * 255.0) as u8,
-            (rgb.blue * 255.0) as u8,
-        ])
+        .into()
     }
 }

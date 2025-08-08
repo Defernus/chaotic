@@ -11,12 +11,11 @@ repository = "https://github.com/defernus/chaotic"
 keywords = ["simulation", "art", "chaotic-system", "three-body", "nannou"]
 
 [workspace.dependencies]
-rand = "0.9"
-nannou = "0.19"
-
+bevy = { version = "0.16.1", features = ["dynamic_linking"] }
 
 # project packages
 chaotic = { version = "0.1.0", path = "./crates/chaotic" }
+viewer = { version = "0.1.0", path = "./crates/viewer" }
 
 [profile.release]
 codegen-units = 1

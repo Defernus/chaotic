@@ -1,6 +1,6 @@
 use crate::*;
-use nannou::glam::{DVec2, DVec3};
-use nannou::image;
+use bevy::color::{Color, LinearRgba};
+use bevy::math::{DVec2, DVec3};
 
 const EPSILON: f64 = 1e-5;
 
@@ -66,8 +66,27 @@ impl ThreeBody {
 }
 
 impl ChaoticSystem for ThreeBody {
-    fn mutate(&mut self, mutation: f64) {
-        self.a.velocity.x += mutation;
+    fn mutate(&mut self, pos: &[usize], mutation_scales: &[f64]) {
+        for (i, (&cord, &mutation_scale)) in pos.iter().zip(mutation_scales).enumerate() {
+            let value = match i {
+                0 => &mut self.a.velocity.x,
+                1 => &mut self.a.velocity.y,
+                2 => &mut self.b.velocity.x,
+                3 => &mut self.b.velocity.y,
+                4 => &mut self.c.velocity.x,
+                5 => &mut self.c.velocity.y,
+                6 => &mut self.a.position.x,
+                7 => &mut self.a.position.y,
+                8 => &mut self.b.position.x,
+                9 => &mut self.b.position.y,
+                10 => &mut self.c.position.x,
+                11 => &mut self.c.position.y,
+                12 => &mut self.g,
+                _ => break,
+            };
+
+            *value += cord as f64 * mutation_scale;
+        }
     }
 
     fn update(&mut self, dt: f64) {
@@ -125,27 +144,17 @@ impl ChaoticSystem for ThreeBody {
         }
     }
 
-    fn color(&self) -> image::Rgba<u8> {
+    fn color(&self) -> Color {
         match self.color_schema {
             ThreeBodyColorSchema::VelocityToRgb => {
                 let rgb = self.raw_rgb();
-                image::Rgba([
-                    (rgb.x * 255.0) as u8,
-                    (rgb.y * 255.0) as u8,
-                    (rgb.z * 255.0) as u8,
-                    255, // Alpha channel
-                ])
+                LinearRgba::new(rgb.x as f32, rgb.y as f32, rgb.z as f32, 1.0).into()
             }
 
             ThreeBodyColorSchema::DistanceToLightness { factor } => {
                 let value = self.chaosity() * factor + 1.0;
-                let normalized_value = 1.0 / value.sqrt();
-                image::Rgba([
-                    (normalized_value * 255.0) as u8,
-                    (normalized_value * 255.0) as u8,
-                    (normalized_value * 255.0) as u8,
-                    255,
-                ])
+                let normalized_value = (1.0 / value.sqrt()) as f32;
+                LinearRgba::new(normalized_value, normalized_value, normalized_value, 1.0).into()
             }
         }
     }
