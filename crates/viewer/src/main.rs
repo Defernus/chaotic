@@ -35,7 +35,7 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.spawn((
         Camera2d,
         Projection::Orthographic(OrthographicProjection::default_3d()),
-        Transform::from_xyz(100.0, 100.0, 100.0).looking_at(Vec3::ZERO, Vec3::Z),
+        Transform::from_translation(Vec3::ONE * 300.0).looking_at(Vec3::ZERO, Vec3::Z),
     ));
 
     // Build initial ThreeBody system (matching the original Chaos main)
@@ -90,7 +90,7 @@ fn handle_input(
     mut state: ResMut<ViewerState>,
 ) {
     // Space: advance the simulation for all samples and add a new layer
-    if keys.just_pressed(KeyCode::Space) {
+    if keys.pressed(KeyCode::Space) {
         println!("Advancing simulation...");
         state.samples.update(UPDATES_PER_ITERATION, DT);
         let new_layer = build_image(&state.samples, &mut images);
