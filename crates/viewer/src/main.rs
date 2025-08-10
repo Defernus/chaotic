@@ -205,6 +205,7 @@ fn reset_layers_sys(
     init_data: Res<InitData>,
     mut layer_data: ResMut<LayerData>,
     layers_q: Query<Entity, With<Layer>>,
+    mut camera_q: Query<&mut Transform, With<MainCamera>>,
 ) -> Result<(), BevyError> {
     if layer_data.request_update {
         for layer in layers_q.iter() {
@@ -212,6 +213,9 @@ fn reset_layers_sys(
         }
 
         state.samples = init_data.init();
+
+        let mut camera_transform = camera_q.single_mut()?;
+        camera_transform.translation.z -= layer_data.current_depth as f32;
 
         layer_data.current_depth = 0;
         layer_data.request_update = false;
@@ -369,12 +373,6 @@ fn camera_move_by_mouse(
 
         let x_dir = transform.right();
         let y_dir = -Vec3::Z * 2.0f32.sqrt();
-        println!(
-            "x_dir: {:?}, y_dir: {:?}, down: {:?}",
-            x_dir,
-            y_dir,
-            transform.down()
-        );
 
         if cam.move_detection >= 2 {
             for event in cursor_moved_events.read() {
