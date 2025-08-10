@@ -6,7 +6,12 @@ pub struct Samples<T> {
 }
 
 impl<System> Samples<System> {
-    pub fn new(initial: System, dimensions: Dimensions, mutation_scales: &[f64]) -> Self
+    pub fn new(
+        initial: System,
+        dimensions: Dimensions,
+        mutation_scales: &[f64],
+        all_scale: f64,
+    ) -> Self
     where
         System: ChaoticSystem + Clone,
     {
@@ -17,7 +22,8 @@ impl<System> Samples<System> {
             let mutation = pos
                 .into_iter()
                 .zip(mutation_scales)
-                .map(|(cord, scale)| cord as f64 * scale)
+                .zip(dimensions.sizes())
+                .map(|((cord, scale), &size)| (cord as f64 - size as f64) * scale * all_scale)
                 .collect::<Vec<_>>();
             samples.push(prev.clone());
             prev.mutate(&mutation);
@@ -46,25 +52,4 @@ impl<System> Samples<System> {
             .enumerate()
             .map(|(i, s)| (self.dimensions.index_to_pos(i), s))
     }
-
-    // pub fn draw_2d(&self) -> image::DynamicImage
-    // where
-    //     System: ChaoticSystem,
-    // {
-    //     assert_eq!(
-    //         self.dimensions.len(),
-    //         2,
-    //         "Expected 2D dimensions for draw_2d"
-    //     );
-
-    //     let mut image =
-    //         image::DynamicImage::new_rgb8(self.dimensions[0] as u32, self.dimensions[1] as u32);
-
-    //     for (index, pos) in self.dimensions.iter().enumerate() {
-    //         let color = self.samples[index].color();
-    //         image.put_pixel(pos[0] as u32, pos[1] as u32, color);
-    //     }
-
-    //     image
-    // }
 }

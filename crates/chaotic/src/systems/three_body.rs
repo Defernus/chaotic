@@ -63,6 +63,15 @@ impl ThreeBody {
     pub fn iter(&self) -> impl Iterator<Item = &Body> {
         [&self.a, &self.b, &self.c].into_iter()
     }
+
+    /// Returns a maximum distance between bodies in the system.
+    fn max_dist_sq(&self) -> f64 {
+        let ab = (self.a.position - self.b.position).length_squared();
+        let ac = (self.a.position - self.c.position).length_squared();
+        let bc = (self.b.position - self.c.position).length_squared();
+
+        ab.max(ac).max(bc)
+    }
 }
 
 impl ChaoticSystem for ThreeBody {
@@ -148,31 +157,16 @@ impl ChaoticSystem for ThreeBody {
         match self.color_schema {
             ThreeBodyColorSchema::VelocityToRgb => {
                 let rgb = self.raw_rgb();
-                LinearRgba::new(rgb.x as f32, rgb.y as f32, rgb.z as f32, 1.0).into()
+                let dist = 1.0 / (self.max_dist_sq() + 1.0);
+                LinearRgba::new(rgb.x as f32, rgb.y as f32, rgb.z as f32, dist as f32).into()
             }
 
             ThreeBodyColorSchema::DistanceToLightness { factor } => {
-                let value = self.chaosity() * factor + 1.0;
+                let value = self.max_dist_sq() * factor + 1.0;
                 let normalized_value = (1.0 / value.sqrt()) as f32;
                 LinearRgba::new(normalized_value, normalized_value, normalized_value, 1.0).into()
             }
         }
-    }
-
-    fn distance(&self, other: &Self) -> f64 {
-        let mut total_distance = 0.0;
-        for (body_a, body_b) in self.iter().zip(other.iter()) {
-            let distance = body_a.velocity.distance(body_b.velocity);
-            total_distance += distance;
-        }
-        total_distance / 3.0 // Average distance
-    }
-
-    fn chaosity(&self) -> f64 {
-        self.iter()
-            .map(|body| body.position.length_squared())
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap_or(0.0)
     }
 }
 

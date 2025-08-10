@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone)]
 pub struct Dimensions {
@@ -17,6 +17,10 @@ impl Dimensions {
         Dimensions {
             dimensions: Cow::Owned(dimensions),
         }
+    }
+
+    pub fn sizes(&self) -> &[usize] {
+        &self.dimensions
     }
 
     /// Number of dimensions
@@ -69,6 +73,12 @@ impl Index<usize> for Dimensions {
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.dimensions[index]
+    }
+}
+
+impl IndexMut<usize> for Dimensions {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.dimensions.to_mut()[index]
     }
 }
 

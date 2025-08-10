@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use chaotic::*;
+use std::time::{Duration, Instant};
 
 // Constants taken from the original Chaos main
 const G: f64 = 1.1; // Gravitational constant
@@ -26,10 +27,8 @@ fn main() {
 
 #[derive(Resource)]
 pub struct InitData {
-    pub width: usize,
-    pub height: usize,
-
     pub mutation_scale: Vec<f64>,
+    pub all_scale: f64,
     pub initial_mutation: Vec<f64>,
     pub dimensions: Dimensions,
 
@@ -44,6 +43,7 @@ impl InitData {
             initial_sample,
             self.dimensions.clone(),
             &self.mutation_scale,
+            self.all_scale,
         )
     }
 }
@@ -78,9 +78,8 @@ impl Default for InitData {
 
         Self {
             initial_sample,
-            width: 128,
-            height: 128,
-            mutation_scale: vec![0.00001, 0.00001],
+            mutation_scale: vec![1.0, 1.0],
+            all_scale: 0.0000001,
             initial_mutation: vec![0.0, 0.0],
             dimensions: Dimensions::new_static(&[128, 128]),
         }
@@ -92,6 +91,8 @@ pub struct LayerData {
     pub target_depth: usize,
     pub current_depth: usize,
 
+    pub layers_per_frame: usize,
+
     pub request_update: bool,
 }
 
@@ -100,6 +101,7 @@ impl Default for LayerData {
         Self {
             target_depth: 32,
             current_depth: 0,
+            layers_per_frame: 10,
             request_update: false,
         }
     }
@@ -108,6 +110,8 @@ impl Default for LayerData {
 #[derive(Resource)]
 pub struct ViewerState {
     pub samples: Samples<ThreeBody>,
+    pub zoom: f32,
+    pub offset: Vec2,
 }
 
 #[derive(Component)]
@@ -124,11 +128,36 @@ pub fn gui_system(
 
         ui.label(format!("Current Depth: {}", layer_data.current_depth));
 
+        ui.label("Width:");
+        ui.add(egui::DragValue::new(&mut init_data.dimensions[0]).speed(1));
+        ui.label("Height:");
+        ui.add(egui::DragValue::new(&mut init_data.dimensions[1]).speed(1));
+
         ui.label("Mutation Scale:");
-        for (_i, scale) in init_data.mutation_scale.iter_mut().enumerate() {
-            let speed = (*scale / 20.0).clamp(0.0000001, 100000.0);
-            ui.add(egui::DragValue::new(scale).speed(speed));
-            *scale = scale.clamp(0.0000001, 100000.0);
+
+        let mutation_min = 0.000000001;
+        let mutation_max = 100000.0;
+
+        let speed = (init_data.all_scale / 20.0).clamp(mutation_min, mutation_max);
+        ui.add(egui::DragValue::new(&mut init_data.all_scale).speed(speed));
+        init_data.all_scale = init_data.all_scale.clamp(mutation_min, mutation_max);
+
+        for (i, scale) in init_data.mutation_scale.iter_mut().enumerate() {
+            let speed = (*scale / 20.0).clamp(mutation_min, mutation_max);
+            ui.horizontal(|ui| {
+                ui.label(format!("{}: ", i));
+                ui.add(egui::DragValue::new(scale).speed(speed));
+            });
+            *scale = scale.clamp(mutation_min, mutation_max);
+        }
+
+        ui.label("Initial mutation:");
+        for (i, mutation) in init_data.initial_mutation.iter_mut().enumerate() {
+            let speed = (*mutation / 20.0).abs().clamp(mutation_min, mutation_max);
+            ui.horizontal(|ui| {
+                ui.label(format!("{}: ", i));
+                ui.add(egui::DragValue::new(mutation).speed(speed));
+            });
         }
 
         if ui.button("Redraw").clicked() {
@@ -149,7 +178,11 @@ fn setup(mut commands: Commands, init_data: Res<InitData>) {
 
     let samples = init_data.init();
 
-    commands.insert_resource(ViewerState { samples });
+    commands.insert_resource(ViewerState {
+        samples,
+        offset: Vec2::ZERO,
+        zoom: 1.0,
+    });
 }
 
 fn reset_layers_sys(
@@ -176,64 +209,53 @@ fn process_layers_sys(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     mut state: ResMut<ViewerState>,
-    init_data: Res<InitData>,
     mut layer_data: ResMut<LayerData>,
     mut camera_q: Query<&mut Transform, With<Camera2d>>,
 ) -> Result<(), BevyError> {
-    println!(
-        "Processing layers {} {}",
-        layer_data.current_depth, layer_data.target_depth
-    );
     let mut camera_transform = camera_q.single_mut()?;
-    camera_transform.translation.z = layer_data.current_depth as f32 + 200.0;
+    camera_transform.translation.z = layer_data.current_depth as f32;
 
     if layer_data.current_depth < layer_data.target_depth {
-        println!("Advancing simulation...");
-        state.samples.update(UPDATES_PER_ITERATION, DT);
-        let new_layer = build_image(&state.samples, &init_data.dimensions, &mut images);
+        let start_time = Instant::now();
+        let mut current_time = start_time;
 
-        commands.spawn((
-            Layer,
-            Sprite::from_image(new_layer.clone()),
-            Transform::from_xyz(0.0, 0.0, layer_data.current_depth as f32),
-        ));
+        while current_time - start_time < Duration::from_millis(10) {
+            println!("Advancing simulation...");
+            state.samples.update(UPDATES_PER_ITERATION, DT);
+            let new_layer = build_image(&state.samples, &mut images);
 
-        layer_data.current_depth += 1;
+            commands.spawn((
+                Layer,
+                Sprite::from_image(new_layer.clone()),
+                Transform::from_xyz(0.0, 0.0, layer_data.current_depth as f32),
+            ));
+
+            layer_data.current_depth += 1;
+            if layer_data.current_depth >= layer_data.target_depth {
+                break;
+            }
+
+            current_time = Instant::now();
+        }
     }
-
-    // // F: select most stable system index (for potential inspection)
-    // if keys.just_pressed(KeyCode::KeyF) {
-    //     println!("Selecting most stable system...");
-    //     if let Some((index, _)) = state
-    //         .samples
-    //         .samples
-    //         .iter()
-    //         .map(ChaoticSystem::chaosity)
-    //         .enumerate()
-    //         .min_by(|a, b| a.1.total_cmp(&b.1))
-    //     {
-    //         state.display_sample = index;
-    //         println!("Inspecting most stable simulation at {}", index);
-    //     }
-    // }
 
     Ok(())
 }
 
-fn build_image(
-    samples: &Samples<ThreeBody>,
-    dimensions: &Dimensions,
-    images: &mut Assets<Image>,
-) -> Handle<Image> {
-    assert_eq!(dimensions.len(), 2, "Expected 2D dimensions for draw_2d");
+fn build_image(samples: &Samples<ThreeBody>, images: &mut Assets<Image>) -> Handle<Image> {
+    assert_eq!(
+        samples.dimensions.len(),
+        2,
+        "Expected 2D dimensions for draw_2d"
+    );
 
-    let width = dimensions[0] as u32;
-    let height = dimensions[1] as u32;
+    let width = samples.dimensions[0] as u32;
+    let height = samples.dimensions[1] as u32;
 
     // Allocate RGBA8 buffer
     let mut data = vec![0u8; (width * height * 4) as usize];
 
-    for (index, pos) in dimensions.iter().enumerate() {
+    for (index, pos) in samples.dimensions.iter().enumerate() {
         let color = samples.samples[index].color();
         let rgba = color.to_srgba();
         let idx = (pos[1] as u32 * width + pos[0] as u32) as usize * 4;
