@@ -30,9 +30,22 @@ pub struct InitData {
     pub height: usize,
 
     pub mutation_scale: Vec<f64>,
+    pub initial_mutation: Vec<f64>,
     pub dimensions: Dimensions,
 
     pub initial_sample: ThreeBody,
+}
+
+impl InitData {
+    pub fn init(&self) -> Samples<ThreeBody> {
+        let mut initial_sample = self.initial_sample.clone();
+        initial_sample.mutate(&self.initial_mutation);
+        Samples::new(
+            initial_sample,
+            self.dimensions.clone(),
+            &self.mutation_scale,
+        )
+    }
 }
 
 impl Default for InitData {
@@ -68,6 +81,7 @@ impl Default for InitData {
             width: 128,
             height: 128,
             mutation_scale: vec![0.00001, 0.00001],
+            initial_mutation: vec![0.0, 0.0],
             dimensions: Dimensions::new_static(&[128, 128]),
         }
     }
@@ -99,10 +113,27 @@ pub struct ViewerState {
 #[derive(Component)]
 pub struct Layer;
 
-pub fn gui_system(mut contexts: EguiContexts, mut layer_data: ResMut<LayerData>) -> Result {
+pub fn gui_system(
+    mut contexts: EguiContexts,
+    mut layer_data: ResMut<LayerData>,
+    mut init_data: ResMut<InitData>,
+) -> Result {
     egui::Window::new("Control").show(contexts.ctx_mut()?, |ui| {
         ui.label("Target Depth:");
         ui.add(egui::DragValue::new(&mut layer_data.target_depth).speed(1));
+
+        ui.label(format!("Current Depth: {}", layer_data.current_depth));
+
+        ui.label("Mutation Scale:");
+        for (_i, scale) in init_data.mutation_scale.iter_mut().enumerate() {
+            let speed = (*scale / 20.0).clamp(0.0000001, 100000.0);
+            ui.add(egui::DragValue::new(scale).speed(speed));
+            *scale = scale.clamp(0.0000001, 100000.0);
+        }
+
+        if ui.button("Redraw").clicked() {
+            layer_data.request_update = true;
+        }
     });
 
     Ok(())
@@ -116,11 +147,7 @@ fn setup(mut commands: Commands, init_data: Res<InitData>) {
         Transform::from_translation(Vec3::ONE * 300.0).looking_at(Vec3::ZERO, Vec3::Z),
     ));
 
-    let samples = Samples::new(
-        init_data.initial_sample.clone(),
-        init_data.dimensions.clone(),
-        &init_data.mutation_scale,
-    );
+    let samples = init_data.init();
 
     commands.insert_resource(ViewerState { samples });
 }
@@ -137,13 +164,10 @@ fn reset_layers_sys(
             commands.entity(layer).despawn();
         }
 
-        state.samples = Samples::new(
-            init_data.initial_sample.clone(),
-            init_data.dimensions.clone(),
-            &init_data.mutation_scale,
-        );
+        state.samples = init_data.init();
 
         layer_data.current_depth = 0;
+        layer_data.request_update = false;
     }
     Ok(())
 }
@@ -156,14 +180,18 @@ fn process_layers_sys(
     mut layer_data: ResMut<LayerData>,
     mut camera_q: Query<&mut Transform, With<Camera2d>>,
 ) -> Result<(), BevyError> {
-    if layer_data.current_depth < layer_data.target_depth {
-        let mut camera_transform = camera_q.single_mut()?;
+    println!(
+        "Processing layers {} {}",
+        layer_data.current_depth, layer_data.target_depth
+    );
+    let mut camera_transform = camera_q.single_mut()?;
+    camera_transform.translation.z = layer_data.current_depth as f32 + 200.0;
 
+    if layer_data.current_depth < layer_data.target_depth {
         println!("Advancing simulation...");
         state.samples.update(UPDATES_PER_ITERATION, DT);
         let new_layer = build_image(&state.samples, &init_data.dimensions, &mut images);
 
-        camera_transform.translation.z = layer_data.current_depth as f32 + 200.0;
         commands.spawn((
             Layer,
             Sprite::from_image(new_layer.clone()),
