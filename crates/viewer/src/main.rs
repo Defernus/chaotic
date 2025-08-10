@@ -27,6 +27,7 @@ fn main() {
             (
                 camera_zoom,
                 camera_move_by_mouse,
+                rotate_camera,
                 reset_layers_sys,
                 process_layers_sys,
             ),
@@ -129,6 +130,8 @@ pub struct Layer;
 pub struct MainCamera {
     pub cursor_position: Vec2,
     pub move_detection: u32,
+    pub rotate_cursor_position: Vec2,
+    pub rotate_detection: u32,
 }
 
 fn setup(mut commands: Commands, init_data: Res<InitData>) {
@@ -398,6 +401,72 @@ fn camera_move_by_mouse(
             cam.move_detection = 0;
             cam.cursor_position.x = 0.0;
             cam.cursor_position.y = 0.0;
+        }
+    }
+
+    Ok(())
+}
+
+const ROTATE_SPEED: f32 = 0.005; // radians per pixel
+
+/// Compute the closest point on the world Z axis (x=0,y=0 line) to the camera's forward ray.
+fn closest_point_on_z_axis_to_camera_ray(origin: Vec3, dir: Vec3) -> Vec3 {
+    let u = dir.normalize_or_zero();
+    let v = Vec3::Z;
+    let w0 = origin;
+
+    let a = u.dot(u);
+    let b = u.dot(v);
+    let c = v.dot(v);
+    let d = u.dot(w0);
+    let e = v.dot(w0);
+
+    let denom = a * c - b * b;
+    if denom.abs() < 1e-8 {
+        return Vec3::new(0.0, 0.0, origin.z);
+    }
+    let t = (a * e - b * d) / denom;
+    Vec3::new(0.0, 0.0, t)
+}
+
+fn rotate_camera(
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
+    mut cursor_moved_events: EventReader<CursorMoved>,
+    mut camera: Query<(&mut Transform, &mut MainCamera), With<MainCamera>>,
+    mut contexts: EguiContexts,
+) -> Result<(), BevyError> {
+    if contexts.ctx_mut()?.is_pointer_over_area() {
+        return Ok(());
+    }
+
+    if mouse_button_input.pressed(MouseButton::Right) {
+        let (mut transform, mut cam) = camera.single_mut()?;
+
+        let forward: Vec3 = transform.forward().into();
+        let pivot = closest_point_on_z_axis_to_camera_ray(transform.translation, forward);
+
+        if cam.rotate_detection >= 2 {
+            for event in cursor_moved_events.read() {
+                if cam.rotate_cursor_position.x == 0.0 {
+                    cam.rotate_cursor_position = event.position;
+                }
+                let dif_x = event.position.x - cam.rotate_cursor_position.x;
+                let angle = dif_x * ROTATE_SPEED;
+                if angle.abs() > 0.0 {
+                    let rot = Quat::from_axis_angle(Vec3::Z, angle);
+                    transform.rotate_around(pivot, rot);
+                }
+                cam.rotate_cursor_position = event.position;
+            }
+        } else {
+            cam.rotate_detection += 1;
+        }
+    }
+
+    if mouse_button_input.just_released(MouseButton::Right) {
+        for (_, mut cam) in camera.iter_mut() {
+            cam.rotate_detection = 0;
+            cam.rotate_cursor_position = Vec2::ZERO;
         }
     }
 
