@@ -109,7 +109,7 @@ pub struct LayerData {
 impl Default for LayerData {
     fn default() -> Self {
         Self {
-            target_depth: 32,
+            target_depth: 128,
             current_depth: 0,
             layers_per_frame: 10,
             request_update: false,
@@ -129,6 +129,23 @@ pub struct Layer;
 pub struct MainCamera {
     pub cursor_position: Vec2,
     pub move_detection: u32,
+}
+
+fn setup(mut commands: Commands, init_data: Res<InitData>) {
+    // 2D camera is enough for now; we stack layers along Z
+    commands.spawn((
+        Camera2d,
+        Transform::from_translation(Vec3::ONE * 10000.0).looking_at(Vec3::ZERO, Vec3::Z),
+        MainCamera::default(),
+        Projection::Orthographic(OrthographicProjection {
+            far: 200000.0,
+            ..OrthographicProjection::default_3d()
+        }),
+    ));
+
+    let samples = init_data.init();
+
+    commands.insert_resource(ViewerState { samples });
 }
 
 pub fn gui_system(
@@ -182,20 +199,6 @@ pub fn gui_system(
     Ok(())
 }
 
-fn setup(mut commands: Commands, init_data: Res<InitData>) {
-    // 2D camera is enough for now; we stack layers along Z
-    commands.spawn((
-        Camera2d,
-        Transform::from_translation(Vec3::ONE * 300.0).looking_at(Vec3::ZERO, Vec3::Z),
-        MainCamera::default(),
-        Projection::Orthographic(OrthographicProjection::default_3d()),
-    ));
-
-    let samples = init_data.init();
-
-    commands.insert_resource(ViewerState { samples });
-}
-
 fn reset_layers_sys(
     mut commands: Commands,
     mut state: ResMut<ViewerState>,
@@ -229,7 +232,7 @@ fn process_layers_sys(
 
         while current_time - start_time < Duration::from_millis(10) {
             let mut camera_transform = camera_q.single_mut()?;
-            camera_transform.translation.z = 1.0;
+            camera_transform.translation.z += 1.0;
             state.samples.update(UPDATES_PER_ITERATION, DT);
             let new_layer = build_image(&state.samples, &mut images);
 
@@ -339,7 +342,7 @@ fn camera_zoom(
         .unwrap_or_else(|| screen_size / 2.0);
 
     let x_dir = transform.right();
-    let y_dir = transform.down();
+    let y_dir = -Vec3::Z * 2.0f32.sqrt();
 
     transform.translation -= x_dir * (mouse_position.x - screen_size.x / 2.0) * scroll;
     transform.translation -= y_dir * (mouse_position.y - screen_size.y / 2.0) * scroll;
@@ -365,7 +368,13 @@ fn camera_move_by_mouse(
         };
 
         let x_dir = transform.right();
-        let y_dir = transform.down();
+        let y_dir = -Vec3::Z * 2.0f32.sqrt();
+        println!(
+            "x_dir: {:?}, y_dir: {:?}, down: {:?}",
+            x_dir,
+            y_dir,
+            transform.down()
+        );
 
         if cam.move_detection >= 2 {
             for event in cursor_moved_events.read() {
