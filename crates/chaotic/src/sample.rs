@@ -17,7 +17,7 @@ impl<System> Samples<System> {
     {
         let mut samples = Vec::with_capacity(dimensions.volume());
 
-        let mut prev = initial;
+        let mut next_sample = initial;
         for pos in dimensions.iter() {
             let mutation = pos
                 .into_iter()
@@ -25,8 +25,8 @@ impl<System> Samples<System> {
                 .zip(dimensions.sizes())
                 .map(|((cord, scale), &size)| (cord as f64 - size as f64 / 2.0) * scale * all_scale)
                 .collect::<Vec<_>>();
-            samples.push(prev.clone());
-            prev.mutate(&mutation);
+            samples.push(next_sample.clone());
+            next_sample.mutate(&mutation);
         }
 
         Samples {
