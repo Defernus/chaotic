@@ -1,7 +1,9 @@
 use bevy::asset::RenderAssetUsages;
+use bevy::input::mouse::MouseWheel;
 use bevy::math::DVec2;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::window::PrimaryWindow;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use chaotic::*;
 use std::time::{Duration, Instant};
@@ -20,7 +22,15 @@ fn main() {
         .init_resource::<InitData>()
         .init_resource::<LayerData>()
         .add_systems(Startup, setup)
-        .add_systems(Update, (reset_layers_sys, process_layers_sys))
+        .add_systems(
+            Update,
+            (
+                camera_zoom,
+                camera_move_by_mouse,
+                reset_layers_sys,
+                process_layers_sys,
+            ),
+        )
         .add_systems(EguiPrimaryContextPass, gui_system)
         .run();
 }
@@ -81,7 +91,7 @@ impl Default for InitData {
             mutation_scale: vec![1.0, 1.0],
             all_scale: 0.0000001,
             initial_mutation: vec![0.0, 0.0],
-            dimensions: Dimensions::new_static(&[128, 128]),
+            dimensions: Dimensions::new_static(&[512, 512]),
         }
     }
 }
@@ -110,12 +120,16 @@ impl Default for LayerData {
 #[derive(Resource)]
 pub struct ViewerState {
     pub samples: Samples<ThreeBody>,
-    pub zoom: f32,
-    pub offset: Vec2,
 }
 
 #[derive(Component)]
 pub struct Layer;
+
+#[derive(Component, Default)]
+pub struct MainCamera {
+    pub cursor_position: Vec2,
+    pub move_detection: u32,
+}
 
 pub fn gui_system(
     mut contexts: EguiContexts,
@@ -172,17 +186,14 @@ fn setup(mut commands: Commands, init_data: Res<InitData>) {
     // 2D camera is enough for now; we stack layers along Z
     commands.spawn((
         Camera2d,
-        Projection::Orthographic(OrthographicProjection::default_3d()),
         Transform::from_translation(Vec3::ONE * 300.0).looking_at(Vec3::ZERO, Vec3::Z),
+        MainCamera::default(),
+        Projection::Orthographic(OrthographicProjection::default_3d()),
     ));
 
     let samples = init_data.init();
 
-    commands.insert_resource(ViewerState {
-        samples,
-        offset: Vec2::ZERO,
-        zoom: 1.0,
-    });
+    commands.insert_resource(ViewerState { samples });
 }
 
 fn reset_layers_sys(
@@ -210,17 +221,15 @@ fn process_layers_sys(
     mut images: ResMut<Assets<Image>>,
     mut state: ResMut<ViewerState>,
     mut layer_data: ResMut<LayerData>,
-    mut camera_q: Query<&mut Transform, With<Camera2d>>,
+    mut camera_q: Query<(&mut Transform), With<MainCamera>>,
 ) -> Result<(), BevyError> {
-    let mut camera_transform = camera_q.single_mut()?;
-    camera_transform.translation.z = layer_data.current_depth as f32;
-
     if layer_data.current_depth < layer_data.target_depth {
         let start_time = Instant::now();
         let mut current_time = start_time;
 
         while current_time - start_time < Duration::from_millis(10) {
-            println!("Advancing simulation...");
+            let (mut camera_transform) = camera_q.single_mut()?;
+            camera_transform.translation.z = 1.0;
             state.samples.update(UPDATES_PER_ITERATION, DT);
             let new_layer = build_image(&state.samples, &mut images);
 
@@ -284,4 +293,107 @@ fn build_image(samples: &Samples<ThreeBody>, images: &mut Assets<Image>) -> Hand
 fn rotate(v: DVec2, angle: f64) -> DVec2 {
     let (s, c) = angle.sin_cos();
     DVec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+}
+
+const MAX_ZOOM_IN: f32 = 0.5;
+const MAX_ZOOM_OUT: f32 = 6.0;
+const ZOOM_SCALE_SPEED: f32 = 0.003;
+
+fn camera_zoom(
+    mut wheel_input: EventReader<MouseWheel>,
+    mut camera: Query<(&mut Projection, &mut Transform), With<MainCamera>>,
+    window: Query<&Window, With<PrimaryWindow>>,
+) -> Result<(), BevyError> {
+    let Some(mouse_event) = wheel_input.read().last() else {
+        return Ok(());
+    };
+
+    let (mut camera_projection, mut transform) = camera.single_mut()?;
+
+    let Projection::Orthographic(ref mut camera_projection) = *camera_projection else {
+        error!("Expected orthographic projection");
+        return Ok(());
+    };
+
+    let scroll = -mouse_event.y * ZOOM_SCALE_SPEED;
+    if scroll == 0.0 {
+        return Ok(());
+    }
+
+    let scroll = scroll * camera_projection.scale;
+
+    let prev_scale = camera_projection.scale;
+    camera_projection.scale += scroll;
+    camera_projection.scale = camera_projection.scale.clamp(MAX_ZOOM_IN, MAX_ZOOM_OUT);
+    if camera_projection.scale == prev_scale {
+        return Ok(());
+    }
+    let scroll = camera_projection.scale - prev_scale;
+
+    let window = window.single()?;
+
+    // if cursor position is None for some reason, scale from the center of the screen
+    let screen_size = vec2(window.resolution.width(), window.resolution.height());
+    let mouse_position = window
+        .cursor_position()
+        .unwrap_or_else(|| screen_size / 2.0);
+
+    let x_dir = transform.right();
+    let y_dir = transform.down();
+
+    transform.translation -= x_dir * (mouse_position.x - screen_size.x / 2.0) * scroll;
+    transform.translation -= y_dir * (mouse_position.y - screen_size.y / 2.0) * scroll;
+
+    Ok(())
+}
+
+fn camera_move_by_mouse(
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
+    mut cursor_moved_events: EventReader<CursorMoved>,
+    mut camera: Query<(&mut Transform, &mut MainCamera, &Projection), With<MainCamera>>,
+    mut contexts: EguiContexts,
+    layer_data: Res<LayerData>,
+) -> Result<(), BevyError> {
+    if contexts.ctx_mut()?.is_pointer_over_area() {
+        return Ok(());
+    }
+
+    if mouse_button_input.pressed(MouseButton::Left) {
+        let (mut transform, mut cam, projection) = camera.single_mut()?;
+        let Projection::Orthographic(ref projection) = *projection else {
+            error!("Expected orthographic projection");
+            return Ok(());
+        };
+
+        let x_dir = transform.right();
+        let y_dir = transform.down();
+
+        if cam.move_detection >= 2 {
+            for event in cursor_moved_events.read() {
+                if cam.cursor_position.x == 0.0 {
+                    cam.cursor_position.x = event.position.x;
+                    cam.cursor_position.y = event.position.y;
+                }
+                let dif_x = cam.cursor_position.x - event.position.x;
+                let dif_y = cam.cursor_position.y - event.position.y;
+                transform.translation += x_dir * dif_x * projection.scale;
+                transform.translation += y_dir * dif_y * projection.scale;
+
+                cam.cursor_position.x = event.position.x;
+                cam.cursor_position.y = event.position.y;
+            }
+        } else {
+            cam.move_detection += 1;
+        }
+    }
+
+    if mouse_button_input.just_released(MouseButton::Left) {
+        for (_, mut cam, _) in camera.iter_mut() {
+            cam.move_detection = 0;
+            cam.cursor_position.x = 0.0;
+            cam.cursor_position.y = 0.0;
+        }
+    }
+
+    Ok(())
 }

@@ -23,7 +23,7 @@ impl<System> Samples<System> {
                 .into_iter()
                 .zip(mutation_scales)
                 .zip(dimensions.sizes())
-                .map(|((cord, scale), &size)| (cord as f64 - size as f64) * scale * all_scale)
+                .map(|((cord, scale), &size)| (cord as f64 - size as f64 / 2.0) * scale * all_scale)
                 .collect::<Vec<_>>();
             samples.push(prev.clone());
             prev.mutate(&mutation);
