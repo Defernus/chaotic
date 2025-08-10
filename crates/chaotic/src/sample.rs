@@ -14,8 +14,13 @@ impl<System> Samples<System> {
 
         let mut prev = initial;
         for pos in dimensions.iter() {
+            let mutation = pos
+                .into_iter()
+                .zip(mutation_scales)
+                .map(|(cord, scale)| cord as f64 * scale)
+                .collect::<Vec<_>>();
             samples.push(prev.clone());
-            prev.mutate(&pos, mutation_scales);
+            prev.mutate(&mutation);
         }
 
         Samples {

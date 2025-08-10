@@ -66,8 +66,8 @@ impl ThreeBody {
 }
 
 impl ChaoticSystem for ThreeBody {
-    fn mutate(&mut self, pos: &[usize], mutation_scales: &[f64]) {
-        for (i, (&cord, &mutation_scale)) in pos.iter().zip(mutation_scales).enumerate() {
+    fn mutate(&mut self, pos: &[f64]) {
+        for (i, &mutation) in pos.iter().enumerate() {
             let value = match i {
                 0 => &mut self.a.velocity.x,
                 1 => &mut self.a.velocity.y,
@@ -85,7 +85,7 @@ impl ChaoticSystem for ThreeBody {
                 _ => break,
             };
 
-            *value += cord as f64 * mutation_scale;
+            *value += mutation;
         }
     }
 

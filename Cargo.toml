@@ -12,6 +12,7 @@ keywords = ["simulation", "art", "chaotic-system", "three-body", "nannou"]
 
 [workspace.dependencies]
 bevy = { version = "0.16.1", features = ["dynamic_linking"] }
+bevy_egui = "0.36"
 
 # project packages
 chaotic = { version = "0.1.0", path = "./crates/chaotic" }

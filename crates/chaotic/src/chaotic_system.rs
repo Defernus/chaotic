@@ -2,7 +2,7 @@ use bevy::color::Color;
 
 pub trait ChaoticSystem {
     /// Mutates the system by a `mutation` factor.
-    fn mutate(&mut self, pos: &[usize], mutation_scales: &[f64]);
+    fn mutate(&mut self, pos: &[f64]);
 
     /// Updates the system state by a time step `dt`.
     fn update(&mut self, dt: f64);

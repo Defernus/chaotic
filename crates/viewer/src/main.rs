@@ -2,35 +2,113 @@ use bevy::asset::RenderAssetUsages;
 use bevy::math::DVec2;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use chaotic::*;
 
 // Constants taken from the original Chaos main
 const G: f64 = 1.1; // Gravitational constant
 const DT: f64 = 0.31; // Time step for simulation
 const UPDATES_PER_ITERATION: usize = 1;
-const MUTATION: f64 = 0.000001;
-const DIMENSIONS: Dimensions = Dimensions::new_static(&[128, 128]);
-
-#[derive(Resource)]
-struct ViewerState {
-    initial_sample: ThreeBody,
-    samples: Samples<ThreeBody>,
-    display_sample: usize,
-    // Image handles for each generated layer (latest at the end)
-    layers: Vec<Handle<Image>>,
-}
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(EguiPlugin::default())
         .init_resource::<ClearColor>()
         .insert_resource(ClearColor(Color::BLACK))
+        .init_resource::<InitData>()
+        .init_resource::<LayerData>()
         .add_systems(Startup, setup)
-        .add_systems(Update, (handle_input,))
+        .add_systems(Update, (reset_layers_sys, process_layers_sys))
+        .add_systems(EguiPrimaryContextPass, gui_system)
         .run();
 }
 
-fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+#[derive(Resource)]
+pub struct InitData {
+    pub width: usize,
+    pub height: usize,
+
+    pub mutation_scale: Vec<f64>,
+    pub dimensions: Dimensions,
+
+    pub initial_sample: ThreeBody,
+}
+
+impl Default for InitData {
+    fn default() -> Self {
+        // Build initial ThreeBody system (matching the original Chaos main)
+        let angle_a = 0.0;
+        let angle_b = std::f64::consts::PI * (1.0 / 3.0) * 2.0;
+        let angle_c = std::f64::consts::PI * (2.0 / 3.0) * 2.0;
+        let mass = 0.1;
+        let velocity = 0.31;
+
+        let initial_sample = ThreeBody::new(
+            G,
+            Body::new(
+                mass,
+                rotate(DVec2::X, angle_a),
+                rotate(DVec2::Y, angle_a) * velocity,
+            ),
+            Body::new(
+                mass,
+                rotate(DVec2::X, angle_b),
+                rotate(DVec2::Y, angle_b) * velocity,
+            ),
+            Body::new(
+                mass,
+                rotate(DVec2::X, angle_c),
+                rotate(DVec2::Y, angle_c) * velocity,
+            ),
+        );
+
+        Self {
+            initial_sample,
+            width: 128,
+            height: 128,
+            mutation_scale: vec![0.00001, 0.00001],
+            dimensions: Dimensions::new_static(&[128, 128]),
+        }
+    }
+}
+
+#[derive(Resource)]
+pub struct LayerData {
+    pub target_depth: usize,
+    pub current_depth: usize,
+
+    pub request_update: bool,
+}
+
+impl Default for LayerData {
+    fn default() -> Self {
+        Self {
+            target_depth: 32,
+            current_depth: 0,
+            request_update: false,
+        }
+    }
+}
+
+#[derive(Resource)]
+pub struct ViewerState {
+    pub samples: Samples<ThreeBody>,
+}
+
+#[derive(Component)]
+pub struct Layer;
+
+pub fn gui_system(mut contexts: EguiContexts, mut layer_data: ResMut<LayerData>) -> Result {
+    egui::Window::new("Control").show(contexts.ctx_mut()?, |ui| {
+        ui.label("Target Depth:");
+        ui.add(egui::DragValue::new(&mut layer_data.target_depth).speed(1));
+    });
+
+    Ok(())
+}
+
+fn setup(mut commands: Commands, init_data: Res<InitData>) {
     // 2D camera is enough for now; we stack layers along Z
     commands.spawn((
         Camera2d,
@@ -38,121 +116,96 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         Transform::from_translation(Vec3::ONE * 300.0).looking_at(Vec3::ZERO, Vec3::Z),
     ));
 
-    // Build initial ThreeBody system (matching the original Chaos main)
-    let angle_a = 0.0;
-    let angle_b = std::f64::consts::PI * (1.0 / 3.0) * 2.0;
-    let angle_c = std::f64::consts::PI * (2.0 / 3.0) * 2.0;
-    let mass = 0.1;
-    let velocity = 0.31;
-
-    let initial_sample = ThreeBody::new(
-        G,
-        Body::new(
-            mass,
-            rotate(DVec2::X, angle_a),
-            rotate(DVec2::Y, angle_a) * velocity,
-        ),
-        Body::new(
-            mass,
-            rotate(DVec2::X, angle_b),
-            rotate(DVec2::Y, angle_b) * velocity,
-        ),
-        Body::new(
-            mass,
-            rotate(DVec2::X, angle_c),
-            rotate(DVec2::Y, angle_c) * velocity,
-        ),
+    let samples = Samples::new(
+        init_data.initial_sample.clone(),
+        init_data.dimensions.clone(),
+        &init_data.mutation_scale,
     );
 
-    let samples = Samples::new(initial_sample.clone(), DIMENSIONS.clone(), &[MUTATION; 12]);
-
-    // Create first layer image and show it
-    let first_layer = build_image(&samples, &mut images);
-
-    let sprite_z = 0.0f32;
-    commands.spawn((
-        Sprite::from_image(first_layer.clone()),
-        Transform::from_xyz(0.0, 0.0, sprite_z),
-    ));
-
-    commands.insert_resource(ViewerState {
-        initial_sample,
-        samples,
-        display_sample: 0,
-        layers: vec![first_layer],
-    });
+    commands.insert_resource(ViewerState { samples });
 }
 
-fn handle_input(
+fn reset_layers_sys(
     mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<ViewerState>,
+    init_data: Res<InitData>,
+    mut layer_data: ResMut<LayerData>,
+    layers_q: Query<Entity, With<Layer>>,
+) -> Result<(), BevyError> {
+    if layer_data.request_update {
+        for layer in layers_q.iter() {
+            commands.entity(layer).despawn();
+        }
+
+        state.samples = Samples::new(
+            init_data.initial_sample.clone(),
+            init_data.dimensions.clone(),
+            &init_data.mutation_scale,
+        );
+
+        layer_data.current_depth = 0;
+    }
+    Ok(())
+}
+
+fn process_layers_sys(
+    mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     mut state: ResMut<ViewerState>,
-) {
-    // Space: advance the simulation for all samples and add a new layer
-    if keys.pressed(KeyCode::Space) {
+    init_data: Res<InitData>,
+    mut layer_data: ResMut<LayerData>,
+    mut camera_q: Query<&mut Transform, With<Camera2d>>,
+) -> Result<(), BevyError> {
+    if layer_data.current_depth < layer_data.target_depth {
+        let mut camera_transform = camera_q.single_mut()?;
+
         println!("Advancing simulation...");
         state.samples.update(UPDATES_PER_ITERATION, DT);
-        let new_layer = build_image(&state.samples, &mut images);
+        let new_layer = build_image(&state.samples, &init_data.dimensions, &mut images);
 
-        let z = state.layers.len() as f32 * 1.0; // stack slightly in front
-        let entity = commands
-            .spawn((
-                Sprite::from_image(new_layer.clone()),
-                Transform::from_xyz(0.0, 0.0, z),
-            ))
-            .id();
+        camera_transform.translation.z = layer_data.current_depth as f32 + 200.0;
+        commands.spawn((
+            Layer,
+            Sprite::from_image(new_layer.clone()),
+            Transform::from_xyz(0.0, 0.0, layer_data.current_depth as f32),
+        ));
 
-        // Keep the entity alive; handle cleanup later as needed
-        let _ = entity; // suppress warning if not used elsewhere yet
-
-        state.layers.push(new_layer);
+        layer_data.current_depth += 1;
     }
 
-    // R: reset all samples to the initial state
-    if keys.just_pressed(KeyCode::KeyR) {
-        println!("Resetting samples to initial state...");
-        let samples = Samples::new(
-            state.initial_sample.clone(),
-            DIMENSIONS.clone(),
-            &[MUTATION; 12],
-        );
-        state.samples = samples;
+    // // F: select most stable system index (for potential inspection)
+    // if keys.just_pressed(KeyCode::KeyF) {
+    //     println!("Selecting most stable system...");
+    //     if let Some((index, _)) = state
+    //         .samples
+    //         .samples
+    //         .iter()
+    //         .map(ChaoticSystem::chaosity)
+    //         .enumerate()
+    //         .min_by(|a, b| a.1.total_cmp(&b.1))
+    //     {
+    //         state.display_sample = index;
+    //         println!("Inspecting most stable simulation at {}", index);
+    //     }
+    // }
 
-        // Replace the latest layer preview
-        let new_layer = build_image(&state.samples, &mut images);
-        state.layers.clear();
-        state.layers.push(new_layer.clone());
-        // Optionally, we could also despawn previous layer entities; skipped for brevity
-    }
-
-    // F: select most stable system index (for potential inspection)
-    if keys.just_pressed(KeyCode::KeyF) {
-        println!("Selecting most stable system...");
-        if let Some((index, _)) = state
-            .samples
-            .samples
-            .iter()
-            .map(ChaoticSystem::chaosity)
-            .enumerate()
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-        {
-            state.display_sample = index;
-            println!("Inspecting most stable simulation at {}", index);
-        }
-    }
+    Ok(())
 }
 
-fn build_image(samples: &Samples<ThreeBody>, images: &mut Assets<Image>) -> Handle<Image> {
-    assert_eq!(DIMENSIONS.len(), 2, "Expected 2D dimensions for draw_2d");
+fn build_image(
+    samples: &Samples<ThreeBody>,
+    dimensions: &Dimensions,
+    images: &mut Assets<Image>,
+) -> Handle<Image> {
+    assert_eq!(dimensions.len(), 2, "Expected 2D dimensions for draw_2d");
 
-    let width = DIMENSIONS[0] as u32;
-    let height = DIMENSIONS[1] as u32;
+    let width = dimensions[0] as u32;
+    let height = dimensions[1] as u32;
 
     // Allocate RGBA8 buffer
     let mut data = vec![0u8; (width * height * 4) as usize];
 
-    for (index, pos) in DIMENSIONS.iter().enumerate() {
+    for (index, pos) in dimensions.iter().enumerate() {
         let color = samples.samples[index].color();
         let rgba = color.to_srgba();
         let idx = (pos[1] as u32 * width + pos[0] as u32) as usize * 4;
