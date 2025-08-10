@@ -221,14 +221,14 @@ fn process_layers_sys(
     mut images: ResMut<Assets<Image>>,
     mut state: ResMut<ViewerState>,
     mut layer_data: ResMut<LayerData>,
-    mut camera_q: Query<(&mut Transform), With<MainCamera>>,
+    mut camera_q: Query<&mut Transform, With<MainCamera>>,
 ) -> Result<(), BevyError> {
     if layer_data.current_depth < layer_data.target_depth {
         let start_time = Instant::now();
         let mut current_time = start_time;
 
         while current_time - start_time < Duration::from_millis(10) {
-            let (mut camera_transform) = camera_q.single_mut()?;
+            let mut camera_transform = camera_q.single_mut()?;
             camera_transform.translation.z = 1.0;
             state.samples.update(UPDATES_PER_ITERATION, DT);
             let new_layer = build_image(&state.samples, &mut images);
@@ -352,7 +352,6 @@ fn camera_move_by_mouse(
     mut cursor_moved_events: EventReader<CursorMoved>,
     mut camera: Query<(&mut Transform, &mut MainCamera, &Projection), With<MainCamera>>,
     mut contexts: EguiContexts,
-    layer_data: Res<LayerData>,
 ) -> Result<(), BevyError> {
     if contexts.ctx_mut()?.is_pointer_over_area() {
         return Ok(());
