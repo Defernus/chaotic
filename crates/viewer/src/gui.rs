@@ -1,15 +1,17 @@
 use crate::{InitData, LayerData};
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
+use chaotic::ChaoticSystem;
 
-pub fn gui_system(
+pub fn gui_system<T: ChaoticSystem + Clone>(
     mut contexts: EguiContexts,
     mut layer_data: ResMut<LayerData>,
-    mut init_data: ResMut<InitData>,
+    mut init_data: ResMut<InitData<T>>,
 ) -> Result {
     egui::Window::new("Control").show(contexts.ctx_mut()?, |ui| {
         ui.label("Target Depth:");
         ui.add(egui::DragValue::new(&mut layer_data.target_depth).speed(1));
+        layer_data.target_depth = layer_data.target_depth.max(1);
 
         ui.label(format!("Current Depth: {}", layer_data.current_depth));
 
@@ -36,12 +38,21 @@ pub fn gui_system(
             *scale = scale.clamp(mutation_min, mutation_max);
         }
 
-        ui.label("Initial mutation:");
-        for (i, mutation) in init_data.initial_mutation.iter_mut().enumerate() {
-            let speed = (*mutation / 20.0).abs().clamp(mutation_min, mutation_max);
+        let init_data = &mut *init_data;
+
+        ui.label("Initial mutation position:");
+        for (i, (mutation_offset, mutation_scale)) in init_data
+            .initial_mutation
+            .iter_mut()
+            .zip(&init_data.mutation_scale)
+            .enumerate()
+        {
             ui.horizontal(|ui| {
                 ui.label(format!("{}: ", i));
-                ui.add(egui::DragValue::new(mutation).speed(speed));
+                ui.add(
+                    egui::DragValue::new(mutation_offset)
+                        .speed(*mutation_scale * init_data.all_scale),
+                );
             });
         }
 

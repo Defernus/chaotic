@@ -7,7 +7,7 @@ pub struct Samples<T> {
 
 impl<System> Samples<System> {
     pub fn new(
-        initial: System,
+        initial_system: System,
         dimensions: Dimensions,
         mutation_scales: &[f64],
         all_scale: f64,
@@ -17,16 +17,19 @@ impl<System> Samples<System> {
     {
         let mut samples = Vec::with_capacity(dimensions.volume());
 
-        let mut next_sample = initial;
         for pos in dimensions.iter() {
             let mutation = pos
                 .into_iter()
                 .zip(mutation_scales)
                 .zip(dimensions.sizes())
-                .map(|((cord, scale), &size)| (cord as f64 - size as f64 / 2.0) * scale * all_scale)
+                .map(|((cord, scale), &size)| {
+                    (cord as f64 + -(size as f64) * 0.5) * scale * all_scale
+                })
                 .collect::<Vec<_>>();
-            samples.push(next_sample.clone());
-            next_sample.mutate(&mutation);
+
+            let mut system = initial_system.clone();
+            system.mutate(&mutation);
+            samples.push(system);
         }
 
         Samples {

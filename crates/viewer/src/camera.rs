@@ -3,8 +3,8 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
-const MAX_ZOOM_IN: f32 = 0.5;
-const MAX_ZOOM_OUT: f32 = 6.0;
+const MAX_ZOOM_IN: f32 = 0.1;
+const MAX_ZOOM_OUT: f32 = 10.0;
 const ZOOM_SCALE_SPEED: f32 = 0.003;
 
 #[derive(Component, Default)]

@@ -1,6 +1,6 @@
 use bevy::color::Color;
 
-pub trait ChaoticSystem {
+pub trait ChaoticSystem: Send + Sync + 'static {
     /// Mutates the system by a `mutation` factor.
     fn mutate(&mut self, pos: &[f64]);
 
@@ -13,4 +13,7 @@ pub trait ChaoticSystem {
 
     /// Returns the RGB color representation of the system.
     fn color(&self) -> Color;
+
+    /// Returns a difference value between two systems.
+    fn distance(&self, other: &Self) -> f64;
 }

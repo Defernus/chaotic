@@ -3,38 +3,56 @@ use bevy::asset::RenderAssetUsages;
 use bevy::math::DVec2;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use chaotic::{Body, ChaoticSystem, Dimensions, Samples, ThreeBody};
+use chaotic::{
+    Body,
+    ChaoticSystem,
+    Dimensions,
+    Mandelbrot,
+    MandelbrotColorSchema,
+    NBody,
+    NBodyColorSchema,
+    Samples,
+};
 use std::time::{Duration, Instant};
 
 // Constants taken from the original Chaos main
-const G: f64 = 1.1; // Gravitational constant
-const DT: f64 = 0.31; // Time step for simulation
-const UPDATES_PER_ITERATION: usize = 1;
+const G: f64 = 1.0; // Gravitational constant
 
 #[derive(Resource)]
-pub struct InitData {
+pub struct InitData<T> {
     pub mutation_scale: Vec<f64>,
     pub all_scale: f64,
     pub initial_mutation: Vec<f64>,
     pub dimensions: Dimensions,
 
-    pub initial_sample: ThreeBody,
+    pub initial_sample: T,
+    pub dt: f64,
+    pub updates_per_iteration: usize,
 }
 
-impl InitData {
-    pub fn init(&self) -> Samples<ThreeBody> {
+impl<T: ChaoticSystem + Clone> InitData<T> {
+    pub fn init(&self) -> ViewerState<T> {
         let mut initial_sample = self.initial_sample.clone();
         initial_sample.mutate(&self.initial_mutation);
-        Samples::new(
+        let samples = Samples::new(
             initial_sample,
             self.dimensions.clone(),
             &self.mutation_scale,
             self.all_scale,
-        )
+        );
+
+        ViewerState {
+            initial_mutation: self.initial_mutation.clone(),
+            mutation_scale: self.mutation_scale.clone(),
+            all_scale: self.all_scale,
+            dt: self.dt,
+            updates_per_iteration: self.updates_per_iteration,
+            samples,
+        }
     }
 }
 
-impl Default for InitData {
+impl Default for InitData<NBody> {
     fn default() -> Self {
         // Build initial ThreeBody system (matching the original Chaos main)
         let angle_a = 0.0;
@@ -43,31 +61,50 @@ impl Default for InitData {
         let mass = 0.1;
         let velocity = 0.31;
 
-        let initial_sample = ThreeBody::new(
+        let initial_sample = NBody::new(
             G,
-            Body::new(
-                mass,
-                rotate(DVec2::X, angle_a),
-                rotate(DVec2::Y, angle_a) * velocity,
-            ),
-            Body::new(
-                mass,
-                rotate(DVec2::X, angle_b),
-                rotate(DVec2::Y, angle_b) * velocity,
-            ),
-            Body::new(
-                mass,
-                rotate(DVec2::X, angle_c),
-                rotate(DVec2::Y, angle_c) * velocity,
-            ),
+            vec![
+                Body::new(
+                    mass,
+                    rotate(DVec2::X, angle_a),
+                    rotate(DVec2::Y, angle_a) * velocity,
+                ),
+                Body::new(
+                    mass,
+                    rotate(DVec2::X, angle_b),
+                    rotate(DVec2::Y, angle_b) * velocity,
+                ),
+                Body::new(
+                    mass,
+                    rotate(DVec2::X, angle_c),
+                    rotate(DVec2::Y, angle_c) * velocity,
+                ),
+            ],
+            NBodyColorSchema::VelocityToRgb { v0: 1.0 },
         );
 
         Self {
+            dt: 0.33,
+            updates_per_iteration: 1,
             initial_sample,
             mutation_scale: vec![1.0, 1.0],
-            all_scale: 0.0000001,
+            all_scale: 0.01,
             initial_mutation: vec![0.0, 0.0],
-            dimensions: Dimensions::new_static(&[128, 128]),
+            dimensions: Dimensions::new_static(&[256, 256]),
+        }
+    }
+}
+
+impl Default for InitData<Mandelbrot> {
+    fn default() -> Self {
+        Self {
+            dt: 0.01,
+            updates_per_iteration: 1,
+            initial_sample: Mandelbrot::new(MandelbrotColorSchema::Distance),
+            mutation_scale: vec![1.0, 1.0],
+            all_scale: 0.01,
+            initial_mutation: vec![0.0, 0.0],
+            dimensions: Dimensions::new_static(&[256, 256]),
         }
     }
 }
@@ -77,34 +114,36 @@ pub struct LayerData {
     pub target_depth: usize,
     pub current_depth: usize,
 
-    pub layers_per_frame: usize,
-
     pub request_update: bool,
 }
 
 impl Default for LayerData {
     fn default() -> Self {
         Self {
-            target_depth: 128,
+            target_depth: 256,
             current_depth: 0,
-            layers_per_frame: 10,
             request_update: false,
         }
     }
 }
 
 #[derive(Resource)]
-pub struct ViewerState {
-    pub samples: Samples<ThreeBody>,
+pub struct ViewerState<T> {
+    pub initial_mutation: Vec<f64>,
+    pub mutation_scale: Vec<f64>,
+    pub all_scale: f64,
+    pub dt: f64,
+    pub updates_per_iteration: usize,
+    pub samples: Samples<T>,
 }
 
 #[derive(Component)]
 pub struct Layer;
 
-pub fn reset_layers_sys(
+pub fn reset_layers_sys<T: ChaoticSystem + Clone>(
     mut commands: Commands,
-    mut state: ResMut<ViewerState>,
-    init_data: Res<InitData>,
+    mut state: ResMut<ViewerState<T>>,
+    init_data: Res<InitData<T>>,
     mut layer_data: ResMut<LayerData>,
     layers_q: Query<Entity, With<Layer>>,
     mut camera_q: Query<&mut Transform, With<MainCamera>>,
@@ -114,7 +153,7 @@ pub fn reset_layers_sys(
             commands.entity(layer).despawn();
         }
 
-        state.samples = init_data.init();
+        *state = init_data.init();
 
         let mut camera_transform = camera_q.single_mut()?;
         camera_transform.translation.z -= layer_data.current_depth as f32;
@@ -122,24 +161,27 @@ pub fn reset_layers_sys(
         layer_data.current_depth = 0;
         layer_data.request_update = false;
     }
+
     Ok(())
 }
 
-pub fn process_layers_sys(
+pub fn process_layers_sys<T: ChaoticSystem>(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
-    mut state: ResMut<ViewerState>,
+    mut state: ResMut<ViewerState<T>>,
     mut layer_data: ResMut<LayerData>,
     mut camera_q: Query<&mut Transform, With<MainCamera>>,
 ) -> Result<(), BevyError> {
     if layer_data.current_depth < layer_data.target_depth {
+        let dt = state.dt;
+        let updates_per_iteration = state.updates_per_iteration;
         let start_time = Instant::now();
         let mut current_time = start_time;
 
         while current_time - start_time < Duration::from_millis(10) {
             let mut camera_transform = camera_q.single_mut()?;
             camera_transform.translation.z += 1.0;
-            state.samples.update(UPDATES_PER_ITERATION, DT);
+            state.samples.update(updates_per_iteration, dt);
             let new_layer = build_image(&state.samples, &mut images);
 
             commands.spawn((
@@ -160,7 +202,10 @@ pub fn process_layers_sys(
     Ok(())
 }
 
-fn build_image(samples: &Samples<ThreeBody>, images: &mut Assets<Image>) -> Handle<Image> {
+fn build_image<T: ChaoticSystem>(
+    samples: &Samples<T>,
+    images: &mut Assets<Image>,
+) -> Handle<Image> {
     assert_eq!(
         samples.dimensions.len(),
         2,
@@ -175,6 +220,7 @@ fn build_image(samples: &Samples<ThreeBody>, images: &mut Assets<Image>) -> Hand
 
     for (index, pos) in samples.dimensions.iter().enumerate() {
         let color = samples.samples[index].color();
+
         let rgba = color.to_srgba();
         let idx = (pos[1] as u32 * width + pos[0] as u32) as usize * 4;
         data[idx] = (rgba.red * 255.0).round().clamp(0.0, 255.0) as u8;
