@@ -1,5 +1,5 @@
 use crate::*;
-use bevy::color::{Color, LinearRgba};
+use bevy::color::{Color, Hsva};
 use bevy::math::DVec2;
 
 #[derive(Debug, Clone, Copy)]
@@ -27,7 +27,7 @@ impl Mandelbrot {
 
 impl ChaoticSystem for Mandelbrot {
     fn mutate(&mut self, pos: &[f64]) {
-        self.c = DVec2::new(
+        self.c += DVec2::new(
             pos.get(0).copied().unwrap_or_default(),
             pos.get(1).copied().unwrap_or_default(),
         );
@@ -51,8 +51,20 @@ impl ChaoticSystem for Mandelbrot {
     fn color(&self) -> Color {
         match self.color_schema {
             MandelbrotColorSchema::Distance => {
-                let distance = 1.0 / (1.0 + self.z.length_squared() as f32);
-                LinearRgba::new(1.0, 1.0, 1.0, distance).into()
+                // Preserve existing alpha (based on distance), but make RGB colorful
+                let alpha = 1.0 / (1.0 + self.z.length_squared() as f32);
+
+                // Hue from the complex argument, normalized to [0, 1)
+                let mut hue = (self.z.y.atan2(self.z.x) as f32) / (2.0 * std::f32::consts::PI);
+                if hue < 0.0 {
+                    hue += 1.0;
+                }
+
+                // Saturation full, value depends slightly on alpha to give depth
+                let s = 0.95f32;
+                let v = (0.95f32 - 0.6f32 * alpha).clamp(0.1, 1.0);
+
+                Hsva::new(hue, s, v, alpha).into()
             }
         }
     }

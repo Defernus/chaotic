@@ -15,9 +15,6 @@ use chaotic::{
 };
 use std::time::{Duration, Instant};
 
-// Constants taken from the original Chaos main
-const G: f64 = 1.0; // Gravitational constant
-
 #[derive(Resource)]
 pub struct InitData<T> {
     pub mutation_scale: Vec<f64>,
@@ -62,7 +59,7 @@ impl Default for InitData<NBody> {
         let velocity = 0.31;
 
         let initial_sample = NBody::new(
-            G,
+            1.0,
             vec![
                 Body::new(
                     mass,
@@ -103,8 +100,8 @@ impl Default for InitData<Mandelbrot> {
             initial_sample: Mandelbrot::new(MandelbrotColorSchema::Distance),
             mutation_scale: vec![1.0, 1.0],
             all_scale: 0.01,
-            initial_mutation: vec![0.0, 0.0],
-            dimensions: Dimensions::new_static(&[256, 256]),
+            initial_mutation: vec![-0.8, 0.0],
+            dimensions: Dimensions::new_static(&[512, 512]),
         }
     }
 }
@@ -114,16 +111,25 @@ pub struct LayerData {
     pub target_depth: usize,
     pub current_depth: usize,
 
+    pub layers_gap: f32,
+
     pub request_update: bool,
 }
 
 impl Default for LayerData {
     fn default() -> Self {
         Self {
+            layers_gap: 0.1,
             target_depth: 256,
             current_depth: 0,
             request_update: false,
         }
+    }
+}
+
+impl LayerData {
+    pub fn current_size(&self) -> f32 {
+        self.current_depth as f32 * self.layers_gap
     }
 }
 
@@ -156,7 +162,7 @@ pub fn reset_layers_sys<T: ChaoticSystem + Clone>(
         *state = init_data.init();
 
         let mut camera_transform = camera_q.single_mut()?;
-        camera_transform.translation.z -= layer_data.current_depth as f32;
+        camera_transform.translation.z -= layer_data.current_size();
 
         layer_data.current_depth = 0;
         layer_data.request_update = false;
@@ -180,14 +186,14 @@ pub fn process_layers_sys<T: ChaoticSystem>(
 
         while current_time - start_time < Duration::from_millis(10) {
             let mut camera_transform = camera_q.single_mut()?;
-            camera_transform.translation.z += 1.0;
+            camera_transform.translation.z += layer_data.layers_gap;
             state.samples.update(updates_per_iteration, dt);
             let new_layer = build_image(&state.samples, &mut images);
 
             commands.spawn((
                 Layer,
                 Sprite::from_image(new_layer.clone()),
-                Transform::from_xyz(0.0, 0.0, layer_data.current_depth as f32),
+                Transform::from_xyz(0.0, 0.0, layer_data.current_size()),
             ));
 
             layer_data.current_depth += 1;

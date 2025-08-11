@@ -29,7 +29,7 @@ pub fn visualize_area<T: ChaoticSystem>(
     let center_y = (delta_y / y_scale) as f32;
 
     let center = Vec3::X * center_x + Vec3::Y * center_y;
-    let height = Vec3::Z * layer_data.current_depth as f32;
+    let height = Vec3::Z * layer_data.current_size();
 
     area_gizmos.line(center, center + height, Color::WHITE);
 

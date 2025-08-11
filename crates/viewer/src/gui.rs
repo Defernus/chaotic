@@ -9,6 +9,9 @@ pub fn gui_system<T: ChaoticSystem + Clone>(
     mut init_data: ResMut<InitData<T>>,
 ) -> Result {
     egui::Window::new("Control").show(contexts.ctx_mut()?, |ui| {
+        ui.label("Layers gap:");
+        ui.add(egui::DragValue::new(&mut layer_data.layers_gap).speed(0.01));
+
         ui.label("Target Depth:");
         ui.add(egui::DragValue::new(&mut layer_data.target_depth).speed(1));
         layer_data.target_depth = layer_data.target_depth.max(1);
