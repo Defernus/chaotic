@@ -56,7 +56,7 @@ impl Default for InitData<NBody> {
         let angle_b = std::f64::consts::PI * (1.0 / 3.0) * 2.0;
         let angle_c = std::f64::consts::PI * (2.0 / 3.0) * 2.0;
         let mass = 0.1;
-        let velocity = 0.31;
+        let velocity = 0.0;
 
         let initial_sample = NBody::new(
             1.0,
@@ -119,7 +119,7 @@ pub struct LayerData {
 impl Default for LayerData {
     fn default() -> Self {
         Self {
-            layers_gap: 0.1,
+            layers_gap: 1.0,
             target_depth: 256,
             current_depth: 0,
             request_update: false,
